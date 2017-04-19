@@ -138,6 +138,10 @@ code {
       border-bottom-color: $ui-highlight-color;
       background: rgba($base-overlay-background, 0.1);
     }
+
+    &::placeholder {
+      color: #e7aebe;
+    }
   }
 
   .input.field_with_errors {
