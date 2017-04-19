@@ -129,6 +129,10 @@ code {
       border-bottom-color: $color4;
       background: rgba($color8, 0.1);
     }
+
+    &::placeholder {
+      color: #e7aebe;
+    }
   }
 
   .input.field_with_errors {
