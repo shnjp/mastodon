@@ -3,17 +3,17 @@
 #
 # Table name: settings
 #
-#  id         :integer          not null, primary key
 #  var        :string           not null
 #  value      :text
 #  thing_type :string
-#  thing_id   :integer
 #  created_at :datetime
 #  updated_at :datetime
+#  id         :integer          not null, primary key
+#  thing_id   :integer
 #
 
 class Setting < RailsSettings::Base
-  source Rails.root.join('config/settings.yml')
+  source Rails.root.join('config', 'settings.yml')
 
   def to_param
     var

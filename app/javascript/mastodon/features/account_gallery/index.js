@@ -2,15 +2,11 @@ import React from 'react';
 import { connect } from 'react-redux';
 import ImmutablePropTypes from 'react-immutable-proptypes';
 import PropTypes from 'prop-types';
-import {
-  fetchAccount,
-  fetchAccountMediaTimeline,
-  expandAccountMediaTimeline,
-} from '../../actions/accounts';
+import { fetchAccount } from '../../actions/accounts';
+import { refreshAccountMediaTimeline, expandAccountMediaTimeline } from '../../actions/timelines';
 import LoadingIndicator from '../../components/loading_indicator';
 import Column from '../ui/components/column';
 import ColumnBackButton from '../../components/column_back_button';
-import Immutable from 'immutable';
 import ImmutablePureComponent from 'react-immutable-pure-component';
 import { getAccountGallery } from '../../selectors';
 import MediaItem from './components/media_item';
@@ -20,13 +16,14 @@ import { ScrollContainer } from 'react-router-scroll';
 import LoadMore from '../../components/load_more';
 
 const mapStateToProps = (state, props) => ({
-  medias: getAccountGallery(state, Number(props.params.accountId)),
-  isLoading: state.getIn(['timelines', 'accounts_media_timelines', Number(props.params.accountId), 'isLoading']),
-  hasMore: !!state.getIn(['timelines', 'accounts_media_timelines', Number(props.params.accountId), 'next']),
+  medias: getAccountGallery(state, props.params.accountId),
+  isLoading: state.getIn(['timelines', `account:${props.params.accountId}:media`, 'isLoading']),
+  hasMore: !!state.getIn(['timelines', `account:${props.params.accountId}:media`, 'next']),
   autoPlayGif: state.getIn(['meta', 'auto_play_gif']),
 });
 
-class AccountGallery extends ImmutablePureComponent {
+@connect(mapStateToProps)
+export default class AccountGallery extends ImmutablePureComponent {
 
   static propTypes = {
     params: PropTypes.object.isRequired,
@@ -38,20 +35,20 @@ class AccountGallery extends ImmutablePureComponent {
   };
 
   componentDidMount () {
-    this.props.dispatch(fetchAccount(Number(this.props.params.accountId)));
-    this.props.dispatch(fetchAccountMediaTimeline(Number(this.props.params.accountId)));
+    this.props.dispatch(fetchAccount(this.props.params.accountId));
+    this.props.dispatch(refreshAccountMediaTimeline(this.props.params.accountId));
   }
 
   componentWillReceiveProps (nextProps) {
     if (nextProps.params.accountId !== this.props.params.accountId && nextProps.params.accountId) {
-      this.props.dispatch(fetchAccount(Number(nextProps.params.accountId)));
-      this.props.dispatch(fetchAccountMediaTimeline(Number(this.props.params.accountId)));
+      this.props.dispatch(fetchAccount(nextProps.params.accountId));
+      this.props.dispatch(refreshAccountMediaTimeline(this.props.params.accountId));
     }
   }
 
   handleScrollToBottom = () => {
     if (this.props.hasMore) {
-      this.props.dispatch(expandAccountMediaTimeline(Number(this.props.params.accountId)));
+      this.props.dispatch(expandAccountMediaTimeline(this.props.params.accountId));
     }
   }
 
@@ -115,5 +112,3 @@ class AccountGallery extends ImmutablePureComponent {
   }
 
 }
-
-export default connect(mapStateToProps)(AccountGallery);

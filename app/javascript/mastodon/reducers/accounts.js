@@ -4,8 +4,6 @@ import {
   FOLLOWERS_EXPAND_SUCCESS,
   FOLLOWING_FETCH_SUCCESS,
   FOLLOWING_EXPAND_SUCCESS,
-  ACCOUNT_TIMELINE_FETCH_SUCCESS,
-  ACCOUNT_TIMELINE_EXPAND_SUCCESS,
   FOLLOW_REQUESTS_FETCH_SUCCESS,
   FOLLOW_REQUESTS_EXPAND_SUCCESS,
 } from '../actions/accounts';
@@ -46,7 +44,9 @@ import {
   FAVOURITED_STATUSES_EXPAND_SUCCESS,
 } from '../actions/favourites';
 import { STORE_HYDRATE } from '../actions/store';
-import Immutable from 'immutable';
+import emojify from '../features/emoji/emoji';
+import { Map as ImmutableMap, fromJS } from 'immutable';
+import escapeTextContentForBrowser from 'escape-html';
 
 const normalizeAccount = (state, account) => {
   account = { ...account };
@@ -55,7 +55,11 @@ const normalizeAccount = (state, account) => {
   delete account.following_count;
   delete account.statuses_count;
 
-  return state.set(account.id, Immutable.fromJS(account));
+  const displayName = account.display_name.length === 0 ? account.username : account.display_name;
+  account.display_name_html = emojify(escapeTextContentForBrowser(displayName));
+  account.note_emojified = emojify(account.note);
+
+  return state.set(account.id, fromJS(account));
 };
 
 const normalizeAccounts = (state, accounts) => {
@@ -84,7 +88,7 @@ const normalizeAccountsFromStatuses = (state, statuses) => {
   return state;
 };
 
-const initialState = Immutable.Map();
+const initialState = ImmutableMap();
 
 export default function accounts(state = initialState, action) {
   switch(action.type) {
@@ -106,15 +110,13 @@ export default function accounts(state = initialState, action) {
   case BLOCKS_EXPAND_SUCCESS:
   case MUTES_FETCH_SUCCESS:
   case MUTES_EXPAND_SUCCESS:
-    return normalizeAccounts(state, action.accounts);
+    return action.accounts ? normalizeAccounts(state, action.accounts) : state;
   case NOTIFICATIONS_REFRESH_SUCCESS:
   case NOTIFICATIONS_EXPAND_SUCCESS:
   case SEARCH_FETCH_SUCCESS:
     return normalizeAccountsFromStatuses(normalizeAccounts(state, action.accounts), action.statuses);
   case TIMELINE_REFRESH_SUCCESS:
   case TIMELINE_EXPAND_SUCCESS:
-  case ACCOUNT_TIMELINE_FETCH_SUCCESS:
-  case ACCOUNT_TIMELINE_EXPAND_SUCCESS:
   case CONTEXT_FETCH_SUCCESS:
   case FAVOURITED_STATUSES_FETCH_SUCCESS:
   case FAVOURITED_STATUSES_EXPAND_SUCCESS:

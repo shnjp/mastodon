@@ -4,8 +4,11 @@ cache:
   yarn: true
   directories:
   - node_modules
+  - public/assets
+  - public/packs-test
+  - tmp/cache/babel-loader
 dist: trusty
-sudo: false
+sudo: required
 
 notifications:
   email: false
@@ -23,17 +26,16 @@ addons:
   postgresql: 9.4
   apt:
     sources:
-    - ubuntu-toolchain-r-test
     - trusty-media
     packages:
     - ffmpeg
-    - g++-6
     - libprotobuf-dev
     - protobuf-compiler
+    - libicu-dev
 
 rvm:
   - 2.3.4
-  - 2.4.1
+  - 2.4.2
 
 services:
   - redis-server
@@ -50,6 +52,6 @@ before_script:
   - ln -s /usr/bin/x86_64-linux-gnu-g++-6 "$HOME/g++"
 
 script:
-  - bundle exec parallel_test spec/ --group-by filesize --type rspec
-  - npm test
-  - bundle exec i18n-tasks unused
+  - travis_retry bundle exec parallel_test spec/ --group-by filesize --type rspec
+  - yarn test
+  - bundle exec i18n-tasks check-normalized && bundle exec i18n-tasks unused

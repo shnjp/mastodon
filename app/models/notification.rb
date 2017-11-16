@@ -48,10 +48,6 @@ class Notification < ApplicationRecord
 
   cache_associated :from_account, status: STATUS_INCLUDES, mention: [status: STATUS_INCLUDES], favourite: [:account, status: STATUS_INCLUDES], follow: :account
 
-  def activity(eager_loaded = true)
-    eager_loaded ? send(activity_type.underscore) : super()
-  end
-
   def type
     @type ||= TYPE_CLASS_MAP.invert[activity_type].to_sym
   end
@@ -72,7 +68,10 @@ class Notification < ApplicationRecord
   class << self
     def reload_stale_associations!(cached_items)
       account_ids = cached_items.map(&:from_account_id).uniq
-      accounts    = Account.where(id: account_ids).map { |a| [a.id, a] }.to_h
+
+      return if account_ids.empty?
+
+      accounts = Account.where(id: account_ids).map { |a| [a.id, a] }.to_h
 
       cached_items.each do |item|
         item.from_account = accounts[item.from_account_id]
@@ -96,9 +95,9 @@ class Notification < ApplicationRecord
 
     case activity_type
     when 'Status', 'Follow', 'Favourite', 'FollowRequest'
-      self.from_account_id = activity(false)&.account_id
+      self.from_account_id = activity&.account_id
     when 'Mention'
-      self.from_account_id = activity(false)&.status&.account_id
+      self.from_account_id = activity&.status&.account_id
     end
   end
 end

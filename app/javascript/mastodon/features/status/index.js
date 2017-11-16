@@ -3,8 +3,6 @@ import { connect } from 'react-redux';
 import PropTypes from 'prop-types';
 import ImmutablePropTypes from 'react-immutable-proptypes';
 import { fetchStatus } from '../../actions/statuses';
-import Immutable from 'immutable';
-import EmbeddedStatus from '../../components/status';
 import MissingIndicator from '../../components/missing_indicator';
 import DetailedStatus from './components/detailed_status';
 import ActionBar from './components/action_bar';
@@ -14,6 +12,8 @@ import {
   unfavourite,
   reblog,
   unreblog,
+  pin,
+  unpin,
 } from '../../actions/interactions';
 import {
   replyCompose,
@@ -21,18 +21,14 @@ import {
 } from '../../actions/compose';
 import { deleteStatus } from '../../actions/statuses';
 import { initReport } from '../../actions/reports';
-import {
-  makeGetStatus,
-  getStatusAncestors,
-  getStatusDescendants,
-} from '../../selectors';
+import { makeGetStatus } from '../../selectors';
 import { ScrollContainer } from 'react-router-scroll';
 import ColumnBackButton from '../../components/column_back_button';
 import StatusContainer from '../../containers/status_container';
 import { openModal } from '../../actions/modal';
-import { isMobile } from '../../is_mobile';
-import { defineMessages, injectIntl, FormattedMessage } from 'react-intl';
+import { defineMessages, injectIntl } from 'react-intl';
 import ImmutablePureComponent from 'react-immutable-pure-component';
+import { HotKeys } from 'react-hotkeys';
 
 const messages = defineMessages({
   deleteConfirm: { id: 'confirmations.delete.confirm', defaultMessage: 'Delete' },
@@ -43,18 +39,21 @@ const makeMapStateToProps = () => {
   const getStatus = makeGetStatus();
 
   const mapStateToProps = (state, props) => ({
-    status: getStatus(state, Number(props.params.statusId)),
-    ancestorsIds: state.getIn(['timelines', 'ancestors', Number(props.params.statusId)]),
-    descendantsIds: state.getIn(['timelines', 'descendants', Number(props.params.statusId)]),
+    status: getStatus(state, props.params.statusId),
+    ancestorsIds: state.getIn(['contexts', 'ancestors', props.params.statusId]),
+    descendantsIds: state.getIn(['contexts', 'descendants', props.params.statusId]),
     me: state.getIn(['meta', 'me']),
     boostModal: state.getIn(['meta', 'boost_modal']),
+    deleteModal: state.getIn(['meta', 'delete_modal']),
     autoPlayGif: state.getIn(['meta', 'auto_play_gif']),
   });
 
   return mapStateToProps;
 };
 
-class Status extends ImmutablePureComponent {
+@injectIntl
+@connect(makeMapStateToProps)
+export default class Status extends ImmutablePureComponent {
 
   static contextTypes = {
     router: PropTypes.object,
@@ -66,19 +65,21 @@ class Status extends ImmutablePureComponent {
     status: ImmutablePropTypes.map,
     ancestorsIds: ImmutablePropTypes.list,
     descendantsIds: ImmutablePropTypes.list,
-    me: PropTypes.number,
+    me: PropTypes.string,
     boostModal: PropTypes.bool,
+    deleteModal: PropTypes.bool,
     autoPlayGif: PropTypes.bool,
     intl: PropTypes.object.isRequired,
   };
 
   componentWillMount () {
-    this.props.dispatch(fetchStatus(Number(this.props.params.statusId)));
+    this.props.dispatch(fetchStatus(this.props.params.statusId));
   }
 
   componentWillReceiveProps (nextProps) {
     if (nextProps.params.statusId !== this.props.params.statusId && nextProps.params.statusId) {
-      this.props.dispatch(fetchStatus(Number(nextProps.params.statusId)));
+      this._scrolledIntoView = false;
+      this.props.dispatch(fetchStatus(nextProps.params.statusId));
     }
   }
 
@@ -90,8 +91,16 @@ class Status extends ImmutablePureComponent {
     }
   }
 
+  handlePin = (status) => {
+    if (status.get('pinned')) {
+      this.props.dispatch(unpin(status));
+    } else {
+      this.props.dispatch(pin(status));
+    }
+  }
+
   handleReplyClick = (status) => {
-    this.props.dispatch(replyCompose(status, this.context.router));
+    this.props.dispatch(replyCompose(status, this.context.router.history));
   }
 
   handleModalReblog = (status) => {
@@ -113,11 +122,15 @@ class Status extends ImmutablePureComponent {
   handleDeleteClick = (status) => {
     const { dispatch, intl } = this.props;
 
-    dispatch(openModal('CONFIRM', {
-      message: intl.formatMessage(messages.deleteMessage),
-      confirm: intl.formatMessage(messages.deleteConfirm),
-      onConfirm: () => dispatch(deleteStatus(status.get('id'))),
-    }));
+    if (!this.props.deleteModal) {
+      dispatch(deleteStatus(status.get('id')));
+    } else {
+      dispatch(openModal('CONFIRM', {
+        message: intl.formatMessage(messages.deleteMessage),
+        confirm: intl.formatMessage(messages.deleteConfirm),
+        onConfirm: () => dispatch(deleteStatus(status.get('id'))),
+      }));
+    }
   }
 
   handleMentionClick = (account, router) => {
@@ -136,8 +149,110 @@ class Status extends ImmutablePureComponent {
     this.props.dispatch(initReport(status.get('account'), status));
   }
 
+  handleEmbed = (status) => {
+    this.props.dispatch(openModal('EMBED', { url: status.get('url') }));
+  }
+
+  handleHotkeyMoveUp = () => {
+    this.handleMoveUp(this.props.status.get('id'));
+  }
+
+  handleHotkeyMoveDown = () => {
+    this.handleMoveDown(this.props.status.get('id'));
+  }
+
+  handleHotkeyReply = e => {
+    e.preventDefault();
+    this.handleReplyClick(this.props.status);
+  }
+
+  handleHotkeyFavourite = () => {
+    this.handleFavouriteClick(this.props.status);
+  }
+
+  handleHotkeyBoost = () => {
+    this.handleReblogClick(this.props.status);
+  }
+
+  handleHotkeyMention = e => {
+    e.preventDefault();
+    this.handleMentionClick(this.props.status);
+  }
+
+  handleHotkeyOpenProfile = () => {
+    this.context.router.history.push(`/accounts/${this.props.status.getIn(['account', 'id'])}`);
+  }
+
+  handleMoveUp = id => {
+    const { status, ancestorsIds, descendantsIds } = this.props;
+
+    if (id === status.get('id')) {
+      this._selectChild(ancestorsIds.size - 1);
+    } else {
+      let index = ancestorsIds.indexOf(id);
+
+      if (index === -1) {
+        index = descendantsIds.indexOf(id);
+        this._selectChild(ancestorsIds.size + index);
+      } else {
+        this._selectChild(index - 1);
+      }
+    }
+  }
+
+  handleMoveDown = id => {
+    const { status, ancestorsIds, descendantsIds } = this.props;
+
+    if (id === status.get('id')) {
+      this._selectChild(ancestorsIds.size + 1);
+    } else {
+      let index = ancestorsIds.indexOf(id);
+
+      if (index === -1) {
+        index = descendantsIds.indexOf(id);
+        this._selectChild(ancestorsIds.size + index + 2);
+      } else {
+        this._selectChild(index + 1);
+      }
+    }
+  }
+
+  _selectChild (index) {
+    const element = this.node.querySelectorAll('.focusable')[index];
+
+    if (element) {
+      element.focus();
+    }
+  }
+
   renderChildren (list) {
-    return list.map(id => <StatusContainer key={id} id={id} />);
+    return list.map(id => (
+      <StatusContainer
+        key={id}
+        id={id}
+        onMoveUp={this.handleMoveUp}
+        onMoveDown={this.handleMoveDown}
+      />
+    ));
+  }
+
+  setRef = c => {
+    this.node = c;
+  }
+
+  componentDidUpdate () {
+    if (this._scrolledIntoView) {
+      return;
+    }
+
+    const { status, ancestorsIds } = this.props;
+
+    if (status && ancestorsIds && ancestorsIds.size > 0) {
+      const element = this.node.querySelectorAll('.focusable')[ancestorsIds.size - 1];
+
+      element.scrollIntoView(true);
+      this._scrolledIntoView = true;
+    }
   }
 
   render () {
@@ -153,8 +268,6 @@ class Status extends ImmutablePureComponent {
       );
     }
 
-    const account = status.get('account');
-
     if (ancestorsIds && ancestorsIds.size > 0) {
       ancestors = <div>{this.renderChildren(ancestorsIds)}</div>;
     }
@@ -163,32 +276,48 @@ class Status extends ImmutablePureComponent {
       descendants = <div>{this.renderChildren(descendantsIds)}</div>;
     }
 
+    const handlers = {
+      moveUp: this.handleHotkeyMoveUp,
+      moveDown: this.handleHotkeyMoveDown,
+      reply: this.handleHotkeyReply,
+      favourite: this.handleHotkeyFavourite,
+      boost: this.handleHotkeyBoost,
+      mention: this.handleHotkeyMention,
+      openProfile: this.handleHotkeyOpenProfile,
+    };
+
     return (
       <Column>
         <ColumnBackButton />
 
         <ScrollContainer scrollKey='thread'>
-          <div className='scrollable detailed-status__wrapper'>
+          <div className='scrollable detailed-status__wrapper' ref={this.setRef}>
             {ancestors}
 
-            <DetailedStatus
-              status={status}
-              autoPlayGif={autoPlayGif}
-              me={me}
-              onOpenVideo={this.handleOpenVideo}
-              onOpenMedia={this.handleOpenMedia}
-            />
+            <HotKeys handlers={handlers}>
+              <div className='focusable' tabIndex='0'>
+                <DetailedStatus
+                  status={status}
+                  autoPlayGif={autoPlayGif}
+                  me={me}
+                  onOpenVideo={this.handleOpenVideo}
+                  onOpenMedia={this.handleOpenMedia}
+                />
 
-            <ActionBar
-              status={status}
-              me={me}
-              onReply={this.handleReplyClick}
-              onFavourite={this.handleFavouriteClick}
-              onReblog={this.handleReblogClick}
-              onDelete={this.handleDeleteClick}
-              onMention={this.handleMentionClick}
-              onReport={this.handleReport}
-            />
+                <ActionBar
+                  status={status}
+                  me={me}
+                  onReply={this.handleReplyClick}
+                  onFavourite={this.handleFavouriteClick}
+                  onReblog={this.handleReblogClick}
+                  onDelete={this.handleDeleteClick}
+                  onMention={this.handleMentionClick}
+                  onReport={this.handleReport}
+                  onPin={this.handlePin}
+                  onEmbed={this.handleEmbed}
+                />
+              </div>
+            </HotKeys>
 
             {descendants}
           </div>
@@ -198,5 +327,3 @@ class Status extends ImmutablePureComponent {
   }
 
 }
-
-export default injectIntl(connect(makeMapStateToProps)(Status));
